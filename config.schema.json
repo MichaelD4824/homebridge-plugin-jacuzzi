@@ -1,0 +1,196 @@
+{
+  "pluginAlias": "Jacuzzi-ProLink-Spa",
+  "pluginType": "platform",
+  "headerDisplay": "This plugin works with Jacuzzzi Prolink wifi modules. Each pump, lights, etc are exposed HomeKit as separate accessories. In most situations, if you're fine with the defaults, the configuration is automatic. Else you can give your Spa a name below, and modify other settings...",
+  "singular": true,
+  "layout": [
+    {
+      "items": [
+        "autoCreateAccessories",
+        "name"
+      ]
+    },
+    {
+      "ref": "devices",
+      "type": "array",
+      "expandable": true,
+      "buttonText": "Add device",
+      "items": [
+        "devices[].name",
+        "devices[].deviceType"
+      ]
+    },
+    {
+      "items": [
+        "host"
+      ]
+    }
+  ],
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "required": true,
+        "default": "Spa"
+      },
+      "autoCreateAccessories": {
+        "title": "Automatically Create All Spa Controls as Accessories",
+        "type": "boolean",
+        "default": true,
+        "required": true
+      },
+      "host": {
+        "title": "Spa IP Address",
+        "type": "string",
+        "placeholder": "192.168.1.23 (plugin will attempt to discover automatically if blank)",
+        "required": false,
+        "format": "hostname"
+      },
+      "devices": {
+        "title": "Manually Created Accessories",
+        "type": "array",
+        "required": false,
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "title": "Device name",
+              "type": "string",
+              "placeholder": "my Pump or light or...",
+              "required": true
+            },
+            "deviceType": {
+              "title": "Device type",
+              "type": "string",
+              "required": true,
+              "oneOf": [
+                {
+                  "title": "Pump 1",
+                  "enum": [
+                    "Pump 1"
+                  ]
+                },
+                {
+                  "title": "Pump 2",
+                  "enum": [
+                    "Pump 2"
+                  ]
+                },
+                {
+                  "title": "Pump 3",
+                  "enum": [
+                    "Pump 3"
+                  ]
+                },
+                {
+                  "title": "Pump 4",
+                  "enum": [
+                    "Pump 4"
+                  ]
+                },
+                {
+                  "title": "Pump 5",
+                  "enum": [
+                    "Pump 5"
+                  ]
+                },
+                {
+                  "title": "Pump 6",
+                  "enum": [
+                    "Pump 6"
+                  ]
+                },
+                {
+                  "title": "Lights 1",
+                  "enum": [
+                    "Lights 1"
+                  ]
+                },
+                {
+                  "title": "Lights 2",
+                  "enum": [
+                    "Lights 2"
+                  ]
+                },
+                {
+                  "title": "Temperature Sensor",
+                  "enum": [
+                    "Temperature Sensor"
+                  ]
+                },
+                {
+                  "title": "Temperature Control",
+                  "enum": [
+                    "Thermostat"
+                  ]
+                },
+                {
+                  "title": "Water Flow Problem Sensor",
+                  "enum": [
+                    "Water Flow Problem Sensor"
+                  ]
+                },
+                {
+                  "title": "Hold Switch",
+                  "enum": [
+                    "Hold Switch"
+                  ]
+                },
+                {
+                  "title": "Spa Settings",
+                  "enum": [
+                    "Spa Settings"
+                  ]
+                },
+                {
+                  "title": "Spa Panel",
+                  "enum": [
+                    "Spa Panel"
+                  ]
+                },
+                {
+                  "title": "Spa Heat Mode Ready",
+                  "enum": [
+                    "Spa Heat Mode Ready"
+                  ]
+                },
+                {
+                  "title": "Blower",
+                  "enum": [
+                    "Blower"
+                  ]
+                },
+                {
+                  "title": "Mister",
+                  "enum": [
+                    "Mister"
+                  ]
+                },
+                {
+                  "title": "Aux 1",
+                  "enum": [
+                    "Aux 1"
+                  ]
+                },
+                {
+                  "title": "Aux 2",
+                  "enum": [
+                    "Aux 2"
+                  ]
+                },
+                {
+                  "title": "Circulation Pump",
+                  "enum": [
+                    "Circulation Pump"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
