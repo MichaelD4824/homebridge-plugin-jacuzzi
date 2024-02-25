@@ -4,7 +4,6 @@ This plugin should work great if you have a Jacuzzi J-245 from early 2020's with
 The biggest known issue that prevent this plugin from being useful to more people are that:
 1. This only works for encrypted panels.  My Jacuzzi was delivered summer 2021, it seems that any earlier may have an unencrypted panel.
 2. Unlike the Balboa plugin, some pump settings are hard coded (mainly number and speeds). (As of initial commit, tweak spaClients.ts line 152 and 153.)
-3. There is also currently an outstanding issue with Pump 1 rotating it's pump speed identifiers each day, but I hope to have that resolved in the near future.
 
 ## Thanks
 There are two projects that this would not have been possible without.

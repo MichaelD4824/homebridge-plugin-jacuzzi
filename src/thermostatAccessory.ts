@@ -52,13 +52,17 @@ export class ThermostatAccessory {
 		this.service.getCharacteristic(this.platform.Characteristic.TemperatureDisplayUnits)
 			.on(CharacteristicEventTypes.GET, this.getTemperatureDisplayUnits.bind(this));
 		this.service.getCharacteristic(this.platform.Characteristic.CurrentHeatingCoolingState)
-			.on(CharacteristicEventTypes.GET, this.getHeatingState.bind(this));
+			.on(CharacteristicEventTypes.GET, this.getHeatingState.bind(this)).setProps({
+				minValue: 1,
+				maxValue: 2,
+				validValues: [1,2]
+			})
 		// Adjust properties to only allow Off and Heat (not Cool or Auto which are irrelevant)
 		this.service.getCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState)
 			.on(CharacteristicEventTypes.SET, this.setTargetHeatingState.bind(this)).setProps({
 				minValue: 1,
-				maxValue: 1,
-				validValues: [1]
+				maxValue: 2,
+				validValues: [1,2]
 			})
 			.on(CharacteristicEventTypes.GET, this.getTargetHeatingState.bind(this));
 	}
@@ -115,9 +119,9 @@ export class ThermostatAccessory {
 		if (!this.platform.isCurrentlyConnected()) {
 			callback(this.platform.connectionProblem);
 		} else {
-			const heating = this.platform.spa!.getIsHeatingNow();
+			const heating = this.platform.spa!.getIsHeatingNow() ?? true;
 
-			callback(null, this.platform.Characteristic.CurrentHeatingCoolingState.HEAT);
+			callback(null, heating ? this.platform.Characteristic.CurrentHeatingCoolingState.HEAT : this.platform.Characteristic.CurrentHeatingCoolingState.COOL);
 		}
 	}
 
@@ -125,11 +129,10 @@ export class ThermostatAccessory {
 		if (!this.platform.isCurrentlyConnected()) {
 			callback(this.platform.connectionProblem);
 		} else {
-			const mode = this.platform.spa!.getTempRangeIsHigh();
-			let result;
-			result = this.platform.Characteristic.TargetHeatingCoolingState.HEAT;
+			const heating = this.platform.spa!.getIsHeatingNow() ?? true;
 
-			callback(null, result);
+			callback(null, heating ? this.platform.Characteristic.TargetHeatingCoolingState.HEAT : this.platform.Characteristic.TargetHeatingCoolingState.COOL);
+
 		}
 	}
 
@@ -223,8 +226,8 @@ export class ThermostatAccessory {
 
 		this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature).updateValue(this.toCelsius(tempVal ?? 50));
 		this.service.getCharacteristic(this.platform.Characteristic.TargetTemperature).updateValue(this.toCelsius(targetTempVal ?? 50));
-		this.service.getCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState).updateValue(this.platform.Characteristic.TargetHeatingCoolingState.HEAT);
-		this.service.getCharacteristic(this.platform.Characteristic.CurrentHeatingCoolingState).updateValue(this.platform.Characteristic.CurrentHeatingCoolingState.HEAT);
+		this.service.getCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState).updateValue(this.platform.spa!.getIsHeatingNow() ? this.platform.Characteristic.TargetHeatingCoolingState.HEAT : this.platform.Characteristic.TargetHeatingCoolingState.COOL);
+		this.service.getCharacteristic(this.platform.Characteristic.CurrentHeatingCoolingState).updateValue(this.platform.spa!.getIsHeatingNow() ? this.platform.Characteristic.CurrentHeatingCoolingState.HEAT : this.platform.Characteristic.CurrentHeatingCoolingState.COOL);
 	}
 
 	toCelsius(value: number) {

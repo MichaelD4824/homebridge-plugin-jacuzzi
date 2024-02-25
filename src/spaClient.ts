@@ -103,6 +103,7 @@ export class SpaClient {
 	// ready, ready at rest, etc.
 	heatingMode: string;
 	isHeatingNow: boolean;
+	tempChangeMode: boolean;
 
 	// MD2024: Just in case the wrong value gets set in HomeKit, I like to refresh every minute.
 	// These values help me track when that happened.
@@ -159,6 +160,7 @@ export class SpaClient {
 		this.targetTempModeLow = undefined;
 		this.targetTempModeHigh = undefined;
 		this.isHeatingNow = false;
+		this.tempChangeMode = false;
 		this.receivedStateUpdate = true;
 		// This isn't updated as frequently as the above
 		this.flow = FLOW_GOOD;
@@ -854,13 +856,17 @@ export class SpaClient {
 	async setTargetTemperature(temp: number) {
 		//Heavily lifted from jacuzzi.py: _adjust_encrypted_settemp
 
-		let settemp_changed: boolean = true;
-
 		//Set override temp
 		this.targetTempOverride = temp;
-		while (true) {
+		let settemp_changed:boolean = true;
+		let previousSetTemp:number = (this.targetTempModeLow ?? this.targetTempModeHigh ?? 0);
+		let original_temp:number = (this.targetTempModeLow ?? this.targetTempModeHigh ?? 0);
+		//offchance spa never replies, lets only do this 60 times.
+		for(let i = 0; i < 60; i++) {
 			//Only send a new button command after the previous one has been applied.
 			if (settemp_changed) {
+				previousSetTemp = (this.targetTempModeLow ?? this.targetTempModeHigh ?? 0);
+
 				//Decide which direction to go
 				let reqd_change: number = temp - (this.targetTempModeLow ?? this.targetTempModeHigh ?? 0);
 				let btncode;
@@ -884,8 +890,15 @@ export class SpaClient {
 
 			// Wait a second before checking the new setpoint temp
 			await new Promise(resolve => setTimeout(resolve, 1000));
-			settemp_changed = temp != this.targetTempModeLow ?? this.targetTempModeHigh;
+
+			//Determine if previous button press has been applied.  Check if the set point 
+			settemp_changed = (previousSetTemp != this.targetTempModeLow ?? this.targetTempModeHigh) || (previousSetTemp == original_temp && this.tempChangeMode);
 		}
+
+		// If we hit here, not great.  Means we sent 60 commands and the hot tub still didn't get to target temp.
+		// But instead of an infinite loop, lets reset the targetTempOverride so we don't lie to HomeKit
+		this.targetTempOverride = undefined;
+		return;
 	}
 
 	//Not sure if this works, didn't modify from Balboa code
@@ -961,20 +974,10 @@ export class SpaClient {
 		let stateChanged: boolean;
 		let avoidHighFreqDevMessage: boolean = true;
 
+		let unmodified = chunk;
+
 		//Decrypt this packet
 		chunk = this.decrypt(chunk);
-
-		//Decode packet
-		//MD2024: TODO: replace this with call to decrypt function
-		// jacuzzi.py:253 Encrypted packets have an extra byte that we use to form the first key value
-		// // // // // var key1 = (chunk[5] ^ 0x19);
-		// // // // // var key2 = chunk[1] - 5 - 2;
-
-		// // // // // // Apply both keys to each encrypted value and save the decrypted result back into the original packet.
-		// // // // // for(var i = 6; i < chunk[1]; i++) {
-		// // // // //     key2 = mod((key2 - 1), 64);
-		// // // // //     chunk[i] = chunk[i] ^ key1 ^ key2;
-		// // // // // }
 
 		if (this.equal(msgType, StateReply)) {
 			//This is a hot tub status update.
@@ -993,6 +996,9 @@ export class SpaClient {
 			if (this.spaLastUpdated <= new Date(oneMinAgo.getTime() - 60000)) {
 				stateChanged = true;
 				this.spaLastUpdated = new Date();
+
+				this.log.debug("" + this.prettify(chunk));
+				this.log.debug("DEBUG HEATING current|set:", this.currentTemp, "|", (this.targetTempModeHigh ?? this.targetTempModeLow ?? 0), "|Should be heating?", (this.currentTemp ?? 0 + 1) < (this.targetTempModeHigh ?? this.targetTempModeLow ?? 0))
 			}
 
 			avoidHighFreqDevMessage = stateChanged;
@@ -1009,8 +1015,8 @@ export class SpaClient {
 			let oneMinAgo = new Date();
 			if (this.lightLastUpdated <= new Date(oneMinAgo.getTime() - 60000)) {
 				stateChanged = true;
-				//this.lightLastUpdated.setDate(new Date().getDate());
 				this.lightLastUpdated = new Date();
+				this.log.debug("" + this.prettify(chunk));
 			}
 			avoidHighFreqDevMessage = stateChanged;
 		}
@@ -1086,6 +1092,8 @@ export class SpaClient {
 	 */
 	readStateFromBytes(bytes: Uint8Array) {
 		this.receivedStateUpdate = true;
+		// Some fields are the entire byte, like pump 2 status and set temp.  Others are specific bits in that byte,
+		// like "temperature mode".  For those ones, convert byte to binary and compare results.
 
 		// If current_temp = 255, then the Spa is still not fully initialised
 		// (but is not necessarily in "priming" state). Need to wait, really - after some seconds the
@@ -1103,8 +1111,11 @@ export class SpaClient {
 		const moreFlags = bytes[10];
 		// It seems some spas have 3 states for this, idle, heating, heat-waiting.
 		// We merge the latter two into just "heating" - there are two bits here though.
-		this.isHeatingNow = ((moreFlags & 48) !== 0);
+		//this.isHeatingNow = ((moreFlags & 48) !== 0);
 		this.tempRangeIsHigh = (((moreFlags & 4) === 0) ? false : true);
+
+		//Not positive, need more debug
+		this.isHeatingNow = ((bytes[26] >> 6) & 1) == 1;
 
 		//So far during testing I keep getting a new value each day, but it's always +1 the previous.  Maybe it's day of the week?
 		/*
@@ -1114,15 +1125,16 @@ export class SpaClient {
 			00011011 | 00011100 | High
 		*/
 
-
-		//MD2024: When this inevitabily breaks, uncomment below line, and look at log with pump off, low, and high.  Look at index 10
-		//this.log.info("Byte10: " + this.prettify(bytes));
-		if (bytes[10] == 0x0b || bytes[10] == 0x0c || bytes[10] == 0x0d || bytes[10] == 0x0e)
+		//Right most 3 bits appear to be day of week.  middle 2 are what we need.  Shift 3 in order to get pump speed
+		if (((bytes[10] >> 3) & 3) == 1)
 			this.pumpsCurrentSpeed[1] = 0;
-		else if (bytes[10] == 0x03 || bytes[10] == 0x04 || bytes[10] == 0x05 || bytes[10] == 0x06)
+		else if (((bytes[10] >> 3) & 3) == 0)
 			this.pumpsCurrentSpeed[1] = 1;
-		else
+		else	//should be 3 in above statement.  I like this as an else so I can bug check.
 			this.pumpsCurrentSpeed[1] = 2;
+
+		//Pull if hot tub is in temperature mode
+		this.tempChangeMode = ((bytes[10] >> 5) & 1) == 1;
 
 		//Set temperature
 		if (this.tempRangeIsHigh) {
