@@ -122,6 +122,7 @@ export class SpaClient {
 	// Stored so that we can cancel intervals if needed
 	faultCheckIntervalId: any;
 	stateUpdateCheckIntervalId: any;
+	isFilterMode: boolean;
 
 	// Store the previous message of each type so we can track if the current message is different
 	lastStateBytes = new Uint8Array();
@@ -148,6 +149,7 @@ export class SpaClient {
 		this.lightLastUpdated.setDate(new Date().getDate() - 1);
 		this.spaLastUpdated = new Date();
 		this.spaLastUpdated.setDate(new Date().getDate() - 1);
+		this.isFilterMode = false;
 		// Be generous to start.  Once we've read the config, we'll set reduce the number of pumps and their number of speeds correctly
 		// TODO: Read pumps from config startup.
 		this.pumpsCurrentSpeed = [0, 0, 0, 0, 0, 0];
@@ -252,7 +254,7 @@ export class SpaClient {
 			}, 10 * 60 * 1000);
 		}, 5000);
 
-		// Every 15 minutes, make sure we update the log. And if we haven't
+		// Every minute, make sure we update the log. And if we haven't
 		// received a state update, then message the spa so it starts sending
 		// us messages again.
 		if (this.stateUpdateCheckIntervalId) {
@@ -262,7 +264,7 @@ export class SpaClient {
 			if (this.isCurrentlyConnectedToSpa) {
 				this.checkWeHaveReceivedStateUpdate();
 			}
-		}, 15 * 60 * 1000)
+		}, 60 * 1000)
 
 		// Call to ensure we catch up on anything that happened while we
 		// were disconnected.
@@ -742,6 +744,13 @@ export class SpaClient {
 			this.log.error("Trying to set speed of", pumpName, " faster (", desiredSpeed, ") than the pump supports (", this.pumpsSpeedRange[index], ").");
 			return;
 		}
+		if(this.isFilterMode && index == 1)
+		{
+			if (desiredSpeed == 0) {
+				this.log.warn("Trying to turn off",pumpName,"but currently in filter mode.  Will set to low.");
+				desiredSpeed = 1;
+			}
+		}
 		//MD2024: lifted from jacuzzi.py:
 
 		/*Overrides the parent method to accommodate differences
@@ -770,8 +779,13 @@ export class SpaClient {
 		let timesToRun = 0;
 		if (desiredSpeed > this.pumpsCurrentSpeed[index])
 			timesToRun = desiredSpeed - this.pumpsCurrentSpeed[index];
-		else if (desiredSpeed < this.pumpsCurrentSpeed[index])
+		else if (desiredSpeed < this.pumpsCurrentSpeed[index]) {
 			timesToRun = (this.pumpsSpeedRange[index] - this.pumpsCurrentSpeed[index]) + (desiredSpeed + 1);
+
+			// If this pump is in filter mode, we can't turn it off, which requires one less push
+			if(this.isFilterMode && index == 1)
+				timesToRun--;
+		}
 
 		//Lines may be useful when trying to deal with pump 1 being in circulation mode.
 		//this.log.debug('Changing pump',index, 'speed.  Current:', this.pumpsCurrentSpeed[index], '|Desired:', desiredSpeed,'|Pressing button',timesToRun,'times');
@@ -947,6 +961,8 @@ export class SpaClient {
 		const s = "Temp: " + this.internalTemperatureToString(this.currentTemp)
 			+ ", Set Temp: " + this.internalTemperatureToString(this.targetTempModeLow ?? this.targetTempModeHigh)
 			+ ", Pumps: " + pumpDesc
+			+ ", Heating?: " + (this.isHeatingNow ? "Yes" : "No")
+			+ ", Filter mode?: " + (this.isFilterMode ? "Yes" : "No")
 		return s;
 	}
 
@@ -1114,16 +1130,21 @@ export class SpaClient {
 		//this.isHeatingNow = ((moreFlags & 48) !== 0);
 		this.tempRangeIsHigh = (((moreFlags & 4) === 0) ? false : true);
 
-		//Not positive, need more debug
-		this.isHeatingNow = ((bytes[26] >> 6) & 1) == 1;
+		//byte[26]
+		//	00000000
+		//	AB??????
+		//	A is filter mode
+		//	B is heating mode
 
-		//So far during testing I keep getting a new value each day, but it's always +1 the previous.  Maybe it's day of the week?
-		/*
-			   2/21  |   2/22   | Status
-			00001011 | 00001100 | Off
-			00000011 | 00000100 | Low
-			00011011 | 00011100 | High
-		*/
+		this.isHeatingNow = ((bytes[26] >> 6) & 1) == 1;
+		this.isFilterMode = (bytes[26] >> 7) == 1;
+
+		//byte[10]
+		// 00000000
+		//	D?ABBCCC
+		//	A appears to be "temperature mode"
+		//	BB are two bits to indicate jet 1 status (on mine, 1 = off, 0 = low, high = 3.)
+		//	CCC is day of the week, Sunday is 000.
 
 		//Right most 3 bits appear to be day of week.  middle 2 are what we need.  Shift 3 in order to get pump speed
 		if (((bytes[10] >> 3) & 3) == 1)
@@ -1132,6 +1153,9 @@ export class SpaClient {
 			this.pumpsCurrentSpeed[1] = 1;
 		else	//should be 3 in above statement.  I like this as an else so I can bug check.
 			this.pumpsCurrentSpeed[1] = 2;
+
+		//Get pump speed 2:
+		this.pumpsCurrentSpeed[2] = (bytes[8] & 0x0c) >> 2;
 
 		//Pull if hot tub is in temperature mode
 		this.tempChangeMode = ((bytes[10] >> 5) & 1) == 1;
